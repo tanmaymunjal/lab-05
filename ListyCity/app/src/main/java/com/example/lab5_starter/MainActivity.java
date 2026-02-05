@@ -1,6 +1,7 @@
 package com.example.lab5_starter;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
@@ -10,6 +11,13 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+
+import com.google.firebase.firestore.CollectionReference;
+import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.FirebaseFirestoreException;
+import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.google.firebase.firestore.QuerySnapshot;
 
 import java.util.ArrayList;
 
@@ -21,6 +29,11 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
     private ArrayList<City> cityArrayList;
     private ArrayAdapter<City> cityArrayAdapter;
 
+    private FirebaseFirestore db;
+    private CollectionReference citiesRef;
+
+    private City selectedCity = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -31,6 +44,8 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
+
+
 
         // Set views
         addCityButton = findViewById(R.id.buttonAddCity);
@@ -52,18 +67,61 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
         cityListView.setOnItemClickListener((adapterView, view, i, l) -> {
             City city = cityArrayAdapter.getItem(i);
             CityDialogFragment cityDialogFragment = CityDialogFragment.newInstance(city);
+            selectedCity = city;
             cityDialogFragment.show(getSupportFragmentManager(),"City Details");
         });
+
+        db = FirebaseFirestore.getInstance();
+        citiesRef = db.collection("cities");
+
+        citiesRef.addSnapshotListener((QuerySnapshot value, FirebaseFirestoreException error) -> {
+            if (error != null) {
+                Log.e("Firestore", error.toString());
+            }
+
+            if (value != null && !value.isEmpty()) {
+                cityArrayList.clear();
+
+                for (QueryDocumentSnapshot snapshot : value) {
+                    String name = snapshot.getString("name");
+                    String province = snapshot.getString("province");
+
+                    cityArrayList.add(new City(name, province));
+                }
+
+                cityArrayAdapter.notifyDataSetChanged();
+            }
+        });
+
+        Button deleteCityButton = findViewById(R.id.buttonDeleteCity);
+
+        deleteCityButton.setOnClickListener(v -> {
+            if (selectedCity != null) {
+                deleteCity(selectedCity);
+                selectedCity = null; // clear selection after delete
+            }
+        });
+
 
     }
 
     @Override
     public void updateCity(City city, String title, String year) {
+        String oldName = city.getName();
         city.setName(title);
         city.setProvince(year);
         cityArrayAdapter.notifyDataSetChanged();
 
         // Updating the database using delete + addition
+        citiesRef.document(oldName).delete();
+        citiesRef.document(city.getName()).set(city);
+    }
+
+    public void deleteCity(City city) {
+        cityArrayList.remove(city);
+        cityArrayAdapter.notifyDataSetChanged();
+
+        citiesRef.document(city.getName()).delete();
     }
 
     @Override
@@ -71,6 +129,8 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
         cityArrayList.add(city);
         cityArrayAdapter.notifyDataSetChanged();
 
+        DocumentReference docRef = citiesRef.document(city.getName());
+        docRef.set(city);
     }
 
     public void addDummyData(){
